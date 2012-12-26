@@ -93,7 +93,6 @@ except ImportError:   # Python 2.5
 
 DEFAULT_EXCLUDE = '.svn,CVS,.bzr,.hg,.git'
 DEFAULT_IGNORE = 'E226,E24'
-IS_PY3 = sys.version_info[0] == 3
 if sys.platform == 'win32':
     DEFAULT_CONFIG = os.path.expanduser(r'~\.pep8')
 else:
@@ -136,13 +135,12 @@ KEYWORD_REGEX = re.compile(r'(?:[^\s]|\b)(\s*)\b(?:%s)\b(\s*)' %
 OPERATOR_REGEX = re.compile(r'(?:[^,\s])(\s*)(?:[-+*/|!<=>%&^]+)(\s*)')
 LAMBDA_REGEX = re.compile(r'\blambda\b')
 HUNK_REGEX = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@.*$')
+TEST_ONLY_REGEX = re.compile(r'# python(\d) only$')
 
 # Work around Python < 2.6 behaviour, which does not generate NL after
 # a comment which is on a line by itself.
 COMMENT_WITH_NL = tokenize.generate_tokens(['#\n'].pop).send(None)[1] == '#\n'
 
-IS_PY3_TEST = re.compile("^#\s*python3\s*only")
-IS_PY2_TEST = re.compile("^#\s*python2\s*only")
 
 ##############################################################################
 # Plugins (check functions) for physical lines
@@ -1048,16 +1046,17 @@ def python_3000_backticks(logical_line):
 ##############################################################################
 # Checkers on AST
 ##############################################################################
+
+
 class BaseAstCheck(object):
-    """Base class all ASTChecker should derive"""
+    """Base class for AST Checkers."""
 
     def __init__(self, checker):
         self.checker = checker
         self.report_error = checker.report_error
 
     def default_visit(self, node, parents):
-        """Function which is called if not appropiate vist_ method is found"""
-        pass
+        """Function which is called if no appropriate visit_ method is found"""
 
     def error_at_node(self, node, text):
         self.report_error(node.lineno, node.col_offset, text, self)
@@ -1067,8 +1066,7 @@ class BaseAstCheck(object):
             if isinstance(parent, ast.FunctionDef):
                 return parent
             if isinstance(parent, ast.ClassDef):
-                return None
-        return None
+                return
 
 
 class VisitorsRunner(object):
@@ -1090,29 +1088,21 @@ class VisitorsRunner(object):
         if isinstance(node, ast.FunctionDef):
             self.find_global_defs(node)
 
-        method = 'visit_' + node.__class__.__name__
-        # Dont break pep8 in a tool to check pep8
-        method = method.lower()
+        method = 'visit_' + node.__class__.__name__.lower()
         for visitor in self.visitors:
             meth = getattr(visitor, method, visitor.default_visit)
             meth(node, self.parents)
 
     def tag_class_functions(self, cls_node):
         """Tag functions if they are methods, classmethods, staticmethods"""
-
         # tries to find all 'old style decorators' like
         # m = staticmethod(m)
         late_decoration = {}
         for node in ast_iter_nodes(cls_node):
-            if not isinstance(node, ast.Assign):
+            if not (isinstance(node, ast.Assign) and
+                    isinstance(node.value, ast.Call) and
+                    isinstance(node.value.func, ast.Name)):
                 continue
-
-            if not isinstance(node.value, ast.Call):
-                continue
-
-            if not isinstance(node.value.func, ast.Name):
-                continue
-
             func_name = node.value.func.id
             if func_name in ('classmethod', 'staticmethod'):
                 if len(node.value.args) == 1:
@@ -1122,23 +1112,15 @@ class VisitorsRunner(object):
         for node in ast_iter_nodes(cls_node):
             if not isinstance(node, ast.FunctionDef):
                 continue
-
+            node.function_type = 'method'
             if node.name in late_decoration:
                 node.function_type = late_decoration[node.name]
-
-            elif getattr(node, 'decorator_list', None):
-                decos = node.decorator_list
-                decos = [d.id for d in decos if isinstance(d, ast.Name)]
-
-                if 'classmethod' in decos:
-                    node.function_type = 'classmethod'
-                elif 'staticmethod' in decos:
-                    node.function_type = 'staticmethod'
-                else:
-                    node.function_type = 'method'
-
-            else:
-                node.function_type = 'method'
+            elif node.decorator_list:
+                names = [d.id for d in node.decorator_list
+                         if isinstance(d, ast.Name) and
+                         d.id in ('classmethod', 'staticmethod')]
+                if names:
+                    node.function_type = names[0]
 
     def find_global_defs(self, func_def_node):
         global_names = set()
@@ -1177,7 +1159,7 @@ class FunctionNameASTCheck(BaseAstCheck):
     prevailing style (e.g. threading.py), to retain backwards compatibility.
     """
     GOOD_FUNCTION_NAME = re.compile(r"^[_a-z0-9][_a-z0-9]*$")
-    text = "E801 function name does not follow PEP8 guidelines"
+    text = "E801 function name should be lowercase"
 
     def visit_functiondef(self, node, parents):
         function_type = getattr(node, 'function_type', 'function')
@@ -1200,7 +1182,7 @@ class FunctionArgNamesASTCheck(BaseAstCheck):
     """
 
     GOOD_ARG_NAME = re.compile('[a-z_][a-z0-9_]{0,30}$').match
-    E802 = "E802 argument names do not follow PEP8 guidelines"
+    E802 = "E802 argument name should be lowercase"
     E803 = "E803 first argument of a classmethod should be named 'cls'"
     E804 = "E804 first argument of a method should be named 'self'"
 
@@ -1215,40 +1197,21 @@ class FunctionArgNamesASTCheck(BaseAstCheck):
                 self.error_at_node(node, self.E802)
                 return
 
-        if IS_PY3:
-            arg_names = self._get_arg_names_py3(node)
-        else:
-            arg_names = self._get_arg_names_py2(node)
-
+        arg_names = get_arg_names(node)
+        if not arg_names:
+            return
         function_type = getattr(node, 'function_type', 'function')
 
-        if len(arg_names) > 0:
-            if function_type == 'method':
-                if arg_names[0] != 'self':
-                    self.error_at_node(node, self.E804)
-            elif function_type == 'classmethod':
-                if arg_names[0] != 'cls':
-                    self.error_at_node(node, self.E803)
-
+        if function_type == 'method':
+            if arg_names[0] != 'self':
+                self.error_at_node(node, self.E804)
+        elif function_type == 'classmethod':
+            if arg_names[0] != 'cls':
+                self.error_at_node(node, self.E803)
         for arg in arg_names:
             if not self.GOOD_ARG_NAME(arg):
                 self.error_at_node(node, self.E802)
                 return
-
-    def _get_arg_names_py2(self, node):
-        ret = []
-        for arg in node.args.args:
-            if isinstance(arg, ast.Tuple):
-                for t_arg in arg.elts:
-                    ret.append(t_arg.id)
-            else:
-                ret.append(arg.id)
-        return ret
-
-    def _get_arg_names_py3(self, node):
-        pos_args = [arg.arg for arg in node.args.args]
-        kw_only = [arg.arg for arg in node.args.kwonlyargs]
-        return pos_args + kw_only
 
 
 class ImportAsASTCheck(BaseAstCheck):
@@ -1318,8 +1281,19 @@ if '' == ''.encode():
         finally:
             f.close()
 
+    PYTHON_MAJOR_VERSION = 2
     isidentifier = re.compile(r'[a-zA-Z_]\w*').match
     stdin_get_value = sys.stdin.read
+
+    def get_arg_names(node):
+        ret = []
+        for arg in node.args.args:
+            if isinstance(arg, ast.Tuple):
+                for t_arg in arg.elts:
+                    ret.append(t_arg.id)
+            else:
+                ret.append(arg.id)
+        return ret
 else:
     # Python 3
     def readlines(filename):
@@ -1336,10 +1310,16 @@ else:
         finally:
             f.close()
 
+    PYTHON_MAJOR_VERSION = 3
     isidentifier = str.isidentifier
 
     def stdin_get_value():
         return TextIOWrapper(sys.stdin.buffer, errors='ignore').read()
+
+    def get_arg_names(node):
+        pos_args = [arg.arg for arg in node.args.args]
+        kw_only = [arg.arg for arg in node.args.kwonlyargs]
+        return pos_args + kw_only
 readlines.__doc__ = "    Read the source code."
 
 
@@ -1607,7 +1587,7 @@ class Checker(object):
         try:
             tree = compile(''.join(self.lines),
                            '<unknown>', 'exec', ast.PyCF_ONLY_AST)
-        except Exception:
+        except SyntaxError:
             if self.verbose > 0:
                 msg = "Syntax error (%s) in file %s"
                 error = sys.exc_info()[1]
@@ -2000,11 +1980,12 @@ def init_tests(pep8style):
 
         # Filter out tests which cannot run in the current python version
         # Mainly for the AST tests. Some syntax is not supported in python2
-        if IS_PY3 and any(IS_PY2_TEST.search(line) for line in lines[:3]):
-            return
-
-        if not IS_PY3 and any(IS_PY3_TEST.search(line) for line in lines[:3]):
-            return
+        for line in lines[:3]:
+            testonly = TEST_ONLY_REGEX.match(line)
+            if testonly:
+                if int(testonly.group(1)) != PYTHON_MAJOR_VERSION:
+                    return
+                break
 
         line_offset = 0
         codes = ['Okay']
