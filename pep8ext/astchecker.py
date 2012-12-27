@@ -31,14 +31,12 @@ except ImportError:   # Python 2.5
                         yield _ast_compat(item)
     del _ast_compat
 
-from pep8 import PYTHON_MAJOR_VERSION
-
 LOWERCASE_REGEX = re.compile(r'[_a-z][_a-z0-9]*$')
 UPPERCASE_REGEX = re.compile(r'[_A-Z][_A-Z0-9]*$')
 MIXEDCASE_REGEX = re.compile(r'_?[A-Z][a-zA-Z0-9]*$')
 
 
-if PYTHON_MAJOR_VERSION == 2:
+if sys.version_info[0] < 3:
     def get_arg_names(node):
         ret = []
         for arg in node.args.args:
