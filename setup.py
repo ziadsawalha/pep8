@@ -40,6 +40,9 @@ setup(
         'console_scripts': [
             'pep8 = pep8:_main',
         ],
+        'pep8.extension': [
+            'E80 = pep8ext.astchecker:ASTChecker',
+        ],
     },
     classifiers=[
         'Development Status :: 5 - Production/Stable',
