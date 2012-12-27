@@ -111,7 +111,7 @@ KEYWORD_REGEX = re.compile(r'(?:[^\s]|\b)(\s*)\b(?:%s)\b(\s*)' %
 OPERATOR_REGEX = re.compile(r'(?:[^,\s])(\s*)(?:[-+*/|!<=>%&^]+)(\s*)')
 LAMBDA_REGEX = re.compile(r'\blambda\b')
 HUNK_REGEX = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@.*$')
-TEST_ONLY_REGEX = re.compile(r'# python(\d) only$')
+TEST_ONLY_REGEX = re.compile(r'# (python\d) only$')
 
 # Work around Python < 2.6 behaviour, which does not generate NL after
 # a comment which is on a line by itself.
@@ -1033,7 +1033,6 @@ if '' == ''.encode():
         finally:
             f.close()
 
-    PYTHON_MAJOR_VERSION = 2
     isidentifier = re.compile(r'[a-zA-Z_]\w*').match
     stdin_get_value = sys.stdin.read
 else:
@@ -1052,7 +1051,6 @@ else:
         finally:
             f.close()
 
-    PYTHON_MAJOR_VERSION = 3
     isidentifier = str.isidentifier
 
     def stdin_get_value():
@@ -1675,10 +1673,10 @@ class StyleGuide(object):
     def _index_extensions(self):
         try:
             from pkg_resources import iter_entry_points
-            self._extension_registry.update(
-                [(ep.name, ep) for ep in iter_entry_points('pep8.extension')])
         except ImportError:
-            pass
+            return
+        self._extension_registry.update(
+            [(ep.name, ep) for ep in iter_entry_points('pep8.extension')])
 
     def get_extensions(self):
         if not self._extension_registry:
@@ -1712,6 +1710,7 @@ def init_tests(pep8style):
     runner = pep8style.input_file
     all_extensions = pep8style._extension_registry.values()
     pep8style.options.extensions = [ep.load() for ep in all_extensions]
+    python_version = 'python%s' % sys.version_info[0]
 
     def run_tests(filename):
         """Run all the tests from a file."""
@@ -1722,7 +1721,7 @@ def init_tests(pep8style):
         for line in lines[:3]:
             testonly = TEST_ONLY_REGEX.match(line)
             if testonly:
-                if int(testonly.group(1)) != PYTHON_MAJOR_VERSION:
+                if testonly.group(1) != python_version:
                     return
                 break
 
