@@ -28,6 +28,7 @@ setup(
     author_email='johann@rocholl.net',
     url='http://pep8.readthedocs.org/',
     license='Expat license',
+    packages=['pep8ext'],
     py_modules=['pep8'],
     namespace_packages=[],
     include_package_data=True,
