@@ -223,7 +223,7 @@ def maximum_line_length(physical_line, max_line_length):
     line = physical_line.rstrip()
     length = len(line)
     if length > max_line_length:
-        if line.strip().lower().endswith('# nopep8'):
+        if noqa(line):
             return
         if hasattr(line, 'decode'):   # Python 2
             # The line could contain multi-byte characters
@@ -440,7 +440,7 @@ def continuation_line_indentation(logical_line, tokens, indent_level, verbose):
         print(">>> " + tokens[0][4].rstrip())
 
     for token_type, text, start, end, line in tokens:
-        if line.strip().lower().endswith('# nopep8'):
+        if noqa(line):
             continue
 
         newline = row < start[0] - first_row
@@ -1108,6 +1108,10 @@ def mute_string(text):
     return text[:start] + 'x' * (end - start) + text[end:]
 
 
+def noqa(line):
+    return line.strip().lower().endswith('# noqa')
+
+
 def parse_udiff(diff, patterns=None, parent='.'):
     """Return a dictionary of matching lines."""
     # For each file of the diff, the entry key is the filename,
@@ -1328,7 +1332,8 @@ class Checker(object):
             for cls in self._extensions:
                 checker = cls(tree, self.filename)  # XXX options
                 for lineno, offset, text, check in checker.run():
-                    self.report_error(lineno, offset, text, check)
+                    if not noqa(self.lines[lineno - 1]):
+                        self.report_error(lineno, offset, text, check)
         self.line_number = 0
         self.indent_char = None
         self.indent_level = 0
