@@ -1323,10 +1323,12 @@ class Checker(object):
         Run all checks on the input file.
         """
         self.report.init_file(self.filename, self.lines, expected, line_offset)
-        for cls in self._extensions:
-            checker = cls(self)
-            for lineno, offset, text, check in checker.run():
-                self.report_error(lineno, offset, text, check)
+        if self._extensions:
+            tree = ext.generate_ast(self.lines, self.filename, self.verbose)
+            for cls in self._extensions:
+                checker = cls(tree, self.filename)  # XXX options
+                for lineno, offset, text, check in checker.run():
+                    self.report_error(lineno, offset, text, check)
         self.line_number = 0
         self.indent_char = None
         self.indent_level = 0

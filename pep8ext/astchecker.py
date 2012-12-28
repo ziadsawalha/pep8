@@ -29,7 +29,6 @@ except ImportError:   # Python 2.5
                 for item in field:
                     if isinstance(item, ast.AST):
                         yield _ast_compat(item)
-    del _ast_compat
 
 LOWERCASE_REGEX = re.compile(r'[_a-z][_a-z0-9]*$')
 UPPERCASE_REGEX = re.compile(r'[_A-Z][_A-Z0-9]*$')
@@ -53,6 +52,15 @@ else:
         return pos_args + kw_only
 
 
+def generate_ast(lines, filename, verbose=False):
+    try:
+        return compile(''.join(lines), '<unknown>', 'exec', ast.PyCF_ONLY_AST)
+    except SyntaxError:
+        if verbose:
+            error = sys.exc_info()[1]
+            print("Syntax error (%s) in file %s" % (error, filename))
+
+
 class _ASTCheckMeta(type):
     def __init__(self, class_name, bases, namespace):
         try:
@@ -61,7 +69,7 @@ class _ASTCheckMeta(type):
             self._checks = []
 
 
-def err(self, node, code):
+def _err(self, node, code):
     lineno, col_offset = node.lineno, node.col_offset
     if isinstance(node, ast.ClassDef):
         lineno += len(node.decorator_list)
@@ -71,24 +79,16 @@ def err(self, node, code):
         col_offset += 4
     return (lineno, col_offset, '%s %s' % (code, getattr(self, code)), self)
 BaseASTCheck = _ASTCheckMeta('BaseASTCheck', (object,),
-                             {'__doc__': "Base for AST Checks.", 'err': err})
-del err
+                             {'__doc__': "Base for AST Checks.", 'err': _err})
 
 
 class ASTChecker(object):
 
-    def __init__(self, fchecker):
+    def __init__(self, tree, filename):
         self.visitors = BaseASTCheck._checks
         self.parents = deque()
-        try:
-            self._node = compile(''.join(fchecker.lines),
-                                 '<unknown>', 'exec', ast.PyCF_ONLY_AST)
-        except SyntaxError:
-            self._node = None
-            if fchecker.verbose > 0:
-                msg = "Syntax error (%s) in file %s"
-                error = sys.exc_info()[1]
-                print(msg % (error, fchecker.filename))
+        self._node = tree
+        self._filename = filename
 
     def run(self):
         return self._run(self._node) if self._node else ()
