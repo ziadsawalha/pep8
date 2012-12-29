@@ -1181,6 +1181,7 @@ class Checker(object):
         self._physical_checks = options.physical_checks
         self._logical_checks = options.logical_checks
         self._extensions = options.extensions
+        self._options = options
         self.max_line_length = options.max_line_length
         self.verbose = options.verbose
         self.filename = filename
@@ -1330,7 +1331,7 @@ class Checker(object):
         if self._extensions:
             tree = ext.generate_ast(self.lines, self.filename, self.verbose)
             for cls in self._extensions:
-                checker = cls(tree, self.filename)  # XXX options
+                checker = cls(tree, self.filename, self._options)
                 for lineno, offset, text, check in checker.run():
                     if not noqa(self.lines[lineno - 1]):
                         self.report_error(lineno, offset, text, check)

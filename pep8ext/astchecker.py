@@ -84,11 +84,10 @@ BaseASTCheck = _ASTCheckMeta('BaseASTCheck', (object,),
 
 class ASTChecker(object):
 
-    def __init__(self, tree, filename):
+    def __init__(self, tree, filename, options):
         self.visitors = BaseASTCheck._checks
         self.parents = deque()
         self._node = tree
-        self._filename = filename
 
     def run(self):
         return self._run(self._node) if self._node else ()
