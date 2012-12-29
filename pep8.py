@@ -1109,7 +1109,7 @@ def mute_string(text):
 
 
 def noqa(line):
-    return line.strip().lower().endswith('# noqa')
+    return line.strip().lower().endswith(('# noqa', '# nopep8'))
 
 
 def parse_udiff(diff, patterns=None, parent='.'):
